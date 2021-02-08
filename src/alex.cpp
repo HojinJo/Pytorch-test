@@ -25,6 +25,7 @@ void *predict_alexnet(Net *input){
 	std::vector<torch::jit::IValue> inputs = input->inputs;
 	std::cout<<child.size()<<'\n';
 	for(int i=0;i<child.size();i++){
+		pthread_mutex_lock(&mutex_t[input->index_n]);
 		cond_i[input->index_n] = 1;
 		
 		netlayer nl;// = (netlayer *)malloc(sizeof(netlayer));
@@ -44,16 +45,18 @@ void *predict_alexnet(Net *input){
     	}
 		input->inputs.clear();
 		input->inputs.push_back(input->output);
+		pthread_mutex_unlock(&mutex_t[input->index_n]);
 	}
 	std::cout << "\n*****Alex result*****" << "\n";
 	std::cout << (input->output).slice(/*dim=*/1, /*start=*/0, /*end=*/15) << "\n";
 	}
 
 void forward_alexnet(th_arg *th){
+	pthread_mutex_lock(&mutex_t[th->arg->net->index_n]);
 	netlayer *nl = th->arg;
 	std::cout<<"size = "<<nl->index<<"\n";
 	//std::cout << nl->net->child.size() << " " << nl->net->inputs.size() << " "<< nl->net->index_n<< "\n";
-	pthread_mutex_lock(&mutex_t[nl->net->index_n]);
+	
 	std::cout<<"forward_alex start"<<"\n";
 	at::Tensor out;
 	std::vector<torch::jit::Module> child = nl->net->child;

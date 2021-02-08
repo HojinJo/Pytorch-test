@@ -9,13 +9,15 @@ typedef struct _net
 {
 	std::vector<torch::jit::Module> child;
 	std::vector<torch::jit::IValue> inputs;
+	std::vector<int> basicblock;
 	at::Tensor output;
 	int index_n;
-	int index;
 }Net;
 typedef struct _netlayer
 {
 	Net *net;
+	std::vector<int> add_identity; //resnet
+	int j; //resnet
 	int index; //layer index
 }netlayer;
 

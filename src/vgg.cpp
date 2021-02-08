@@ -25,6 +25,7 @@ void *predict_vgg(Net *input){
 	std::vector<torch::jit::IValue> inputs = input->inputs;
 	
 	for(int i=0;i<child.size();i++){
+		pthread_mutex_lock(&mutex_t[input->index_n]);
 		cond_i[input->index_n] = 1;
 		
 		netlayer nl;// = (netlayer *)malloc(sizeof(netlayer));
@@ -42,6 +43,7 @@ void *predict_vgg(Net *input){
     	}
 		input->inputs.clear();
 		input->inputs.push_back(input->output);
+		pthread_mutex_unlock(&mutex_t[input->index_n]);
 	}
 	std::cout << "\n*****VGG result*****" << "\n";
 	std::cout << (input->output).slice(/*dim=*/1, /*start=*/0, /*end=*/15) << "\n";	
@@ -49,8 +51,8 @@ void *predict_vgg(Net *input){
 }
 
 void forward_vgg(th_arg *th){
+	pthread_mutex_lock(&mutex_t[th->arg->net->index_n]);
 	netlayer *nl = th->arg;
-	pthread_mutex_lock(&mutex_t[nl->net->index_n]);
 	std::cout<<"forward_vgg start"<<"\n";
 	at::Tensor out;
 	std::vector<torch::jit::Module> child = nl->net->child;
