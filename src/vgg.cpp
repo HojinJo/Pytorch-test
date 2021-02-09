@@ -34,9 +34,9 @@ void *predict_vgg(Net *input){
 
 		th_arg th;
 		th.arg = &nl;
-		std::cout << "Before thpool add work VGG " << i << "\n";
+		//std::cout << "Before thpool add work VGG " << i << "\n";
 		thpool_add_work(thpool,(void(*)(void *))forward_vgg,&th);
-		std::cout << "After thpool add work VGG " << i <<"\n";
+		//std::cout << "After thpool add work VGG " << i <<"\n";
 		while (cond_i[input->index_n] == 1)
     	{
            	pthread_cond_wait(&cond_t[input->index_n], &mutex_t[input->index_n]);
@@ -53,13 +53,11 @@ void *predict_vgg(Net *input){
 void forward_vgg(th_arg *th){
 	pthread_mutex_lock(&mutex_t[th->arg->net->index_n]);
 	netlayer *nl = th->arg;
-	std::cout<<"forward_vgg start"<<"\n";
 	at::Tensor out;
 	std::vector<torch::jit::Module> child = nl->net->child;
 	std::vector<torch::jit::IValue> inputs = nl->net->inputs;
 	int k = nl->index;
 	if(k == 32){
-		std::cout<<"vgg flatten"<<"\n";
 		out = nl->net->output.view({nl->net->output.size(0), -1});
 		out = out.view({inputs[0].toTensor().size(0), -1});
 		inputs.clear();
@@ -67,7 +65,6 @@ void forward_vgg(th_arg *th){
 		out = child[k].forward(inputs).toTensor();
 	}
 	else{
-		std::cout<<"vgg else "<< k <<"\n";
 		out = child[k].forward(inputs).toTensor();
 	}
 	nl->net->output = out;

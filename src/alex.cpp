@@ -35,10 +35,10 @@ void *predict_alexnet(Net *input){
 		th_arg th;
 		th.arg = &nl;
 
-		std::cout<<"index = "<<nl.index<<'\n';
-		std::cout << "Before thpool add work Alex "<< i << "\n";
+		//std::cout<<"index = "<<nl.index<<'\n';
+		//std::cout << "Before thpool add work Alex "<< i << "\n";
 		thpool_add_work(thpool,(void(*)(void *))forward_alexnet,&th);
-		std::cout << "After thpool add work Alex "<< i << "\n";
+		//std::cout << "After thpool add work Alex "<< i << "\n";
 		while (cond_i[input->index_n] == 1)
     	{
            	pthread_cond_wait(&cond_t[input->index_n], &mutex_t[input->index_n]);
@@ -54,17 +54,12 @@ void *predict_alexnet(Net *input){
 void forward_alexnet(th_arg *th){
 	pthread_mutex_lock(&mutex_t[th->arg->net->index_n]);
 	netlayer *nl = th->arg;
-	std::cout<<"size = "<<nl->index<<"\n";
 	//std::cout << nl->net->child.size() << " " << nl->net->inputs.size() << " "<< nl->net->index_n<< "\n";
-	
-	std::cout<<"forward_alex start"<<"\n";
 	at::Tensor out;
 	std::vector<torch::jit::Module> child = nl->net->child;
 	std::vector<torch::jit::IValue> inputs = nl->net->inputs;
 	int k = nl->index;
-	std::cout<<"Alex layer index "<<k<<"\n";
 	if(k==14){
-		std::cout<<"alex flatten"<<"\n";
 		out = nl->net->output.view({nl->net->output.size(0), -1});
 		out = out.view({inputs[0].toTensor().size(0), -1});
 		inputs.clear();
@@ -72,7 +67,6 @@ void forward_alexnet(th_arg *th){
 		out = child[k].forward(inputs).toTensor();
 	}
 	else{
-		std::cout<<"alex else "<< k <<"\n";
 		out = child[k].forward(inputs).toTensor();
 	}
 	nl->net->output = out;

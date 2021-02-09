@@ -59,17 +59,18 @@ void *predict_resnet18(Net *input){
 	for(int i = 0;i<child.size();i++) {
 		pthread_mutex_lock(&mutex_t[input->index_n]);
 		cond_i[input->index_n] = 1; //right?
+		
 		netlayer nl;// = (netlayer *)malloc(sizeof(netlayer));
 		nl.net = input;
 		nl.add_identity = add_identity;
 		nl.index = i;
-		nl.j =0;
 
 		th_arg th;
 		th.arg = &nl;
-		std::cout << "Before thpool add work RES " << i << "\n";
+		//std::cout << "Before thpool add work RES " << i << "\n";
 		thpool_add_work(thpool,(void(*)(void *))forward_resnet18,&th);
-		std::cout << "After thpool add work RES " << i <<"\n";
+		//std::cout << "After thpool add work RES " << i <<"\n";
+		//cout<<"id = " <<(nl.net->identity)<<"\n";
 		while (cond_i[input->index_n] == 1)
     	{
            	pthread_cond_wait(&cond_t[input->index_n], &mutex_t[input->index_n]);
@@ -89,21 +90,21 @@ void forward_resnet18(th_arg *th){
 	std::vector<torch::jit::IValue> inputs = nl->net->inputs;
 	std::vector<int> basicblock = nl->net->basicblock;
 	std::vector<int> add_identity = nl->add_identity;
-
+	at::Tensor identity = nl->net->identity;
 	//vector<torch::jit::IValue> input; // ==inputs?
 	vector<torch::jit::IValue> inputs_cpy;
-	at::Tensor identity;
-	at::Tensor out;
-
+	at::Tensor out = nl->net->output;
 	int k =nl->index;
+	static int j;
 
-    std::cout<<"res layer index = "<<k<<"\n";
-    //print_script_module(child[i], 0);
+	if(k != 0)
+		j = nl->net->j;
+
+    //std::cout<<"res layer index = "<<k<<"\n";
     //output.clear();
-    if(th->arg->j < basicblock.size() && k == basicblock[th->arg->j]){
-	   std::cout<<"basicblock\n";
-	   identity = nl->net->output; 
-	   std::cout<<"identity= "<<identity<<"\n";
+    if(j < basicblock.size() && k == basicblock[j]){
+	   //std::cout<<"basicblock\n";
+	   identity = out;
     }
 
     if(k==48)
@@ -117,7 +118,6 @@ void forward_resnet18(th_arg *th){
        	out = child[k].forward(inputs).toTensor();
     }
     else if(k == 19 || k == 30 || k == 41){
-		std::cout<<"here?????????????????????/\n";
 		inputs_cpy.clear();
 		inputs_cpy.push_back(identity);
         identity = child[k].forward(inputs_cpy).toTensor();
@@ -126,25 +126,20 @@ void forward_resnet18(th_arg *th){
     	out = child[k].forward(inputs).toTensor();
     }
 
-    if((th->arg->j) < add_identity.size() && k == add_identity[th->arg->j]){
-    	std::cout<<"here\n";
-		//cout<< identity <<"\n";
+    if((j) < add_identity.size() && k == add_identity[j]){
 		out += identity;
-		std::cout<<"here2222222222222\n";
 		inputs.clear();
-		std::cout<<"here3333333333333333\n";
-		inputs.push_back(out);
-		std::cout<<"here44444444\n";
+		inputs.push_back(nl->net->output);
 		//if(add_identity[j]-basicblock[j]==5)
 		//	out = child[i-3].forward(input).toTensor();
 		//else
 		//	out = child[i-2].forward(input).toTensor();
-		out = child[2].forward(inputs).toTensor();
-		std::cout<<"here555555555\n";
-		th->arg->j++;
-		std::cout<<"j = "<<th->arg->j;
+		nl->net->output = child[2].forward(inputs).toTensor();
+		j++;
     }
     nl->net->output = out;
+	nl->net->identity = identity;
+	nl->net->j = j;
 	cond_i[nl->net->index_n]=0;
 	pthread_cond_signal(&cond_t[nl->net->index_n]);
 	pthread_mutex_unlock(&mutex_t[nl->net->index_n]);

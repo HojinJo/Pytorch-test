@@ -12,9 +12,9 @@
 #include "vgg.h"
 #include "resnet18.h"
 
-#define n_res 1
-#define n_alex 0
-#define n_vgg 0
+#define n_res 2
+#define n_alex 2
+#define n_vgg 2
 
 
 #define n_threads 4
@@ -73,7 +73,7 @@ int main(int argc, const char* argv[]) {
     cerr << "error loading the model\n";
     return -1;
   }
-  cout<<"Model Load compelete"<<"\n";
+  cout<<"*** Model Load compelete ***"<<"\n";
 
   cond_t = (pthread_cond_t *)malloc(sizeof(pthread_cond_t) * n_all);
   mutex_t = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t) * n_all);
@@ -109,7 +109,7 @@ int main(int argc, const char* argv[]) {
 
   for(int i=0;i<n_res;i++){
 	  get_submodule_resnet18(resModule[i], &reschild[i],&basicblock);
-    std::cout << "End get submodule_resnet" << "\n";
+    std::cout << "End get submodule_resnet "<< i << "\n";
 	  net_input_res[i].child = reschild[i];
     std::cout<<"11111"<<"\n";
     net_input_res[i].basicblock = basicblock;
@@ -122,7 +122,7 @@ int main(int argc, const char* argv[]) {
   for(int i=0;i<n_alex;i++){
 	  get_submodule_alexnet(alexModule[i], alexchild[i]);
     //std::cout<<alexchild[i].size()<<'\n';
-    std::cout << "End get submodule_alex" << "\n";
+    std::cout << "End get submodule_alex " << i <<"\n";
 	  //net_input_alex[i] = (Net *)malloc(sizeof(Net));
     //std::cout<<"11111"<<"\n";
 	  net_input_alex[i].child = alexchild[i];
@@ -135,7 +135,7 @@ int main(int argc, const char* argv[]) {
 
   for(int i=0;i<n_vgg;i++){
 	  get_submodule_vgg(vggModule[i], vggchild[i]);
-    std::cout << "End get submodule_vgg" << "\n";
+    std::cout << "End get submodule_vgg " << i << "\n";
 	  //net_input_vgg[i] = (Net *)malloc(sizeof(Net));
 	  net_input_vgg[i].child = vggchild[i];
 	  net_input_vgg[i].inputs = inputs;
