@@ -23,14 +23,14 @@ void get_submodule_alexnet(torch::jit::script::Module module, std::vector<torch:
 void *predict_alexnet(Net *input){
 	std::vector<torch::jit::Module> child = input->child;
 	std::vector<torch::jit::IValue> inputs = input->inputs;
-	std::cout<<child.size()<<'\n';
+	//std::cout<<child.size()<<'\n';
 	for(int i=0;i<child.size();i++){
 		pthread_mutex_lock(&mutex_t[input->index_n]);
 		cond_i[input->index_n] = 1;
 		
 		netlayer nl;// = (netlayer *)malloc(sizeof(netlayer));
 		nl.net = input;
-		nl.index = i;
+		nl.net->index = i;
 
 		th_arg th;
 		th.arg = &nl;
@@ -58,7 +58,7 @@ void forward_alexnet(th_arg *th){
 	at::Tensor out;
 	std::vector<torch::jit::Module> child = nl->net->child;
 	std::vector<torch::jit::IValue> inputs = nl->net->inputs;
-	int k = nl->index;
+	int k = nl->net->index;
 	if(k==14){
 		out = nl->net->output.view({nl->net->output.size(0), -1});
 		out = out.view({inputs[0].toTensor().size(0), -1});

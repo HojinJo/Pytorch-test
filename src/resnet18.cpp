@@ -10,22 +10,30 @@
 using namespace std;
 namespace F = torch::nn::functional;
 
-void get_submodule_resnet18(torch::jit::script::Module module,std::vector<torch::jit::Module> *child, vector<int> *basicblock){
+void get_submodule_resnet18(torch::jit::script::Module module,std::vector<torch::jit::Module> &child, vector<pair<int, int>> &block){
 	
     if(module.children().size() == 0){
-	    (*child).push_back(module);
+	    child.push_back(module);
             return;
     }
     for(auto children : module.named_children()){
-	   //std::cout<<typeid(children.value).name()<<"\n";
-	   // std::cout<<children.value.type()->name().value().name()<<"\n";
-    	if(children.name == "0" || children.name == "1")
-			(*basicblock).push_back((*child).size());
+		if(children.name.find("stage") != std::string::npos){
+			for(auto layer : children.value.named_children()){
+				int idx = child.size();
+				int count = 0;
+				for(auto c : layer.value.children()){
+					count++;
+				}
+				get_submodule_resnet18(layer.value, child, block);
+				block.push_back(make_pair(idx, count));
+			}
+			continue;
+		}
 
 		if(children.name != "downsample") //conv1x1
-			get_submodule_resnet18(children.value, child, basicblock);
+			get_submodule_resnet18(children.value, child, block);
 		else
-			(*child).push_back(children.value);
+			child.push_back(children.value);
 
     }
 }
@@ -33,28 +41,8 @@ void get_submodule_resnet18(torch::jit::script::Module module,std::vector<torch:
 void *predict_resnet18(Net *input){
     std::vector<torch::jit::Module> child = input->child;
 	std::vector<torch::jit::IValue> inputs = input->inputs;
-	//std::vector<int> basicblock = input->basicblock;
-	std::vector<int> add_identity;
 	std::cout<<"child = "<<child.size()<<'\n';
-	std::cout<<"basic = "<<input->basicblock.size()<<'\n';
-
-	//pthread_mutex_lock(&mutex_t[input->index_n]);
-	//cond_i[input->index_n] = 1; //right?
- 	
-	 for(int i=0;i<(input->basicblock).size();i++)
- 	{
-	 	if(input->basicblock[i] == 14 || input->basicblock[i] == 25 || input->basicblock[i] == 36)
-			add_identity.push_back(input->basicblock[i]+5);
-	 	else
-			add_identity.push_back(input->basicblock[i]+4);
-		std::cout<<input->basicblock[i]<<" ";
-	}
-	std::cout<<"\n";
-	
-	for(int i=0;i<add_identity.size();i++){
-		std::cout<<add_identity[i]<<" ";
-	}
-	std::cout<<"\n";
+	std::cout<<"basic = "<<input->block.size()<<'\n';
 
 	for(int i = 0;i<child.size();i++) {
 		pthread_mutex_lock(&mutex_t[input->index_n]);
@@ -62,8 +50,7 @@ void *predict_resnet18(Net *input){
 		
 		netlayer nl;// = (netlayer *)malloc(sizeof(netlayer));
 		nl.net = input;
-		nl.add_identity = add_identity;
-		nl.index = i;
+		nl.net->index = i;
 
 		th_arg th;
 		th.arg = &nl;
@@ -75,6 +62,7 @@ void *predict_resnet18(Net *input){
     	{
            	pthread_cond_wait(&cond_t[input->index_n], &mutex_t[input->index_n]);
     	}
+		i = nl.net->index;
 		input->inputs.clear();
 		input->inputs.push_back(input->output);
 		pthread_mutex_unlock(&mutex_t[input->index_n]);
@@ -88,13 +76,12 @@ void forward_resnet18(th_arg *th){
 	netlayer *nl = th->arg;
 	std::vector<torch::jit::Module> child = nl->net->child;
 	std::vector<torch::jit::IValue> inputs = nl->net->inputs;
-	std::vector<int> basicblock = nl->net->basicblock;
-	std::vector<int> add_identity = nl->add_identity;
+	std::vector<pair<int,int>> basicblock = nl->net->block;
 	at::Tensor identity = nl->net->identity;
 	//vector<torch::jit::IValue> input; // ==inputs?
 	vector<torch::jit::IValue> inputs_cpy;
 	at::Tensor out = nl->net->output;
-	int k =nl->index;
+	int k =nl->net->index;
 	static int j;
 
 	if(k != 0)
@@ -102,12 +89,12 @@ void forward_resnet18(th_arg *th){
 
     //std::cout<<"res layer index = "<<k<<"\n";
     //output.clear();
-    if(j < basicblock.size() && k == basicblock[j]){
+    if(j < basicblock.size() && k == basicblock[j].first){
 	   //std::cout<<"basicblock\n";
-	   identity = out;
+	   identity = inputs[0].toTensor(); 
     }
 
-    if(k==48)
+    if(k == child.size()) //flatten
     {	
 		out = nl->net->output.view({nl->net->output.size(0), -1});
 		//out = out.view({out.size(0), -1});
@@ -117,29 +104,54 @@ void forward_resnet18(th_arg *th){
        	//child[k].to(at::kCPU);
        	out = child[k].forward(inputs).toTensor();
     }
-    else if(k == 19 || k == 30 || k == 41){
-		inputs_cpy.clear();
-		inputs_cpy.push_back(identity);
-        identity = child[k].forward(inputs_cpy).toTensor();
-    }
-    else{
-    	out = child[k].forward(inputs).toTensor();
-    }
-
-    if((j) < add_identity.size() && k == add_identity[j]){
+    else if(j < basicblock.size() && basicblock[j].second <= 6 && k == basicblock[j].first + basicblock[j].second - 1){
+		//BasicBlock and downsample 
+		if(basicblock[j].second == 6){
+			inputs_cpy.clear();
+			inputs_cpy.push_back(identity);
+			identity = child[k].forward(inputs_cpy).toTensor();
+		} //BasicBlock
+		else{
+			out = child[k].forward(inputs).toTensor();
+		}
 		out += identity;
 		inputs.clear();
-		inputs.push_back(nl->net->output);
-		//if(add_identity[j]-basicblock[j]==5)
-		//	out = child[i-3].forward(input).toTensor();
-		//else
-		//	out = child[i-2].forward(input).toTensor();
-		nl->net->output = child[2].forward(inputs).toTensor();
-		j++;
+		inputs.push_back(out);
+		out = child[basicblock[j].first + 2].forward(inputs).toTensor();
+		j += 1;
     }
+
+    else if(j < basicblock.size() && basicblock[j].second > 6 && k == basicblock[j].first + 6){
+		// Bottleneck and downsample
+		if(basicblock[j].second == 8){
+			inputs_cpy.clear();
+			inputs_cpy.push_back(identity);
+			identity = child[k+1].forward(inputs_cpy).toTensor();
+			k++;
+		} // Bottleneck 
+		out += identity;
+		inputs.clear();
+		inputs.push_back(out);
+		// ReLu
+		out = child[basicblock[j].first + 6].forward(inputs).toTensor();
+		j += 1;
+    }
+	else if(j < basicblock.size() && basicblock[j].second > 6 && (k == basicblock[j].first + 1 || k == basicblock[j].first + 3) )
+	{
+		// Bottleneck -> ReLu
+		out = child[k].forward(inputs).toTensor();
+		inputs.clear();
+		inputs.push_back(out);
+		out = child[basicblock[j].first + 6].forward(inputs).toTensor();
+	}
+	else{
+		out = child[k].forward(inputs).toTensor();
+	}
+
     nl->net->output = out;
 	nl->net->identity = identity;
 	nl->net->j = j;
+	nl->net->index = k; //check
 	cond_i[nl->net->index_n]=0;
 	pthread_cond_signal(&cond_t[nl->net->index_n]);
 	pthread_mutex_unlock(&mutex_t[nl->net->index_n]);

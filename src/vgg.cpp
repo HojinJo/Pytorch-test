@@ -30,7 +30,7 @@ void *predict_vgg(Net *input){
 		
 		netlayer nl;// = (netlayer *)malloc(sizeof(netlayer));
 		nl.net = input;
-		nl.index = i;
+		nl.net->index = i;
 
 		th_arg th;
 		th.arg = &nl;
@@ -56,7 +56,7 @@ void forward_vgg(th_arg *th){
 	at::Tensor out;
 	std::vector<torch::jit::Module> child = nl->net->child;
 	std::vector<torch::jit::IValue> inputs = nl->net->inputs;
-	int k = nl->index;
+	int k = nl->net->index;
 	if(k == 32){
 		out = nl->net->output.view({nl->net->output.size(0), -1});
 		out = out.view({inputs[0].toTensor().size(0), -1});
