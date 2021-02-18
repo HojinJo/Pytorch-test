@@ -3,6 +3,7 @@
 #include <typeinfo>
 #include <iostream>
 #include <inttypes.h>
+#include <functional>
 #include <memory>
 #include <stdlib.h>
 #include <pthread.h>
@@ -13,10 +14,10 @@
 #include "resnet18.h"
 #include "densenet.h"
 
-#define n_dense 1
+#define n_dense 0
 #define n_res 0
 #define n_alex 0
-#define n_vgg 0
+#define n_vgg 1
 #define n_wide 0
 
 
@@ -78,7 +79,7 @@ int main(int argc, const char* argv[]) {
     	vggModule[i] = torch::jit::load("../vgg_model.pt");
     }
     for (int i=0;i<n_wide;i++){    
-    	vggModule[i] = torch::jit::load("../wideresnet_model.pt");
+    	wideModule[i] = torch::jit::load("../wideresnet_model.pt");
     }
   }
   catch (const c10::Error& e) {
@@ -124,39 +125,47 @@ int main(int argc, const char* argv[]) {
   std::vector<torch::jit::Module> widechild[n_wide];  
   
   std::vector<pair<int,int>> denseblock;
-  std::vector<pair<int,int>> basicblock;
+  std::vector<pair<int,int>> resblock;
+  std::vector<pair<int,int>> wideblock;
 
   for(int i=0;i<n_dense;i++){
 	  get_submodule_densenet(denseModule[i], densechild[i],denseblock);
     std::cout << "End get submodule_densenet "<< i << "\n";
+    cout<<densechild[i].size()<<"\n";
 	  net_input_dense[i].child = densechild[i];
-    //std::cout<<"11111"<<"\n";
+    std::cout<<"11111"<<"\n";
     net_input_dense[i].block = denseblock;
-    //std::cout<<"wwwww"<<"\n";
-	  net_input_dense[i].inputs = inputs;
+    std::cout<<"wwwww"<<"\n";
+    net_input_dense[i].layer = (Layer*)malloc(sizeof(Layer)*densechild[i].size());
+	  net_input_dense[i].input = inputs;
+    cout<<"qqqqqqqqqqqqqqqqqqqq\n";
     net_input_dense[i].index_n = i;
+    cout<<"qqtttttttttttttttttttttttttt\n";
   }
 
   for(int i=0;i<n_res;i++){
-	  get_submodule_resnet18(resModule[i], reschild[i],basicblock);
+	  get_submodule_resnet18(resModule[i], reschild[i],resblock);
     std::cout << "End get submodule_resnet "<< i << "\n";
 	  net_input_res[i].child = reschild[i];
-    net_input_res[i].block = basicblock;
-	  net_input_res[i].inputs = inputs;
+    net_input_res[i].block = resblock;
+	  net_input_res[i].layer = (Layer*)malloc(sizeof(Layer)*reschild[i].size());
+	  net_input_res[i].input = inputs;
     net_input_res[i].index_n = i+n_dense;
   }
 
   for(int i=0;i<n_alex;i++){
 	  get_submodule_alexnet(alexModule[i], alexchild[i]);
+    //get_submodule_alexnet(alexModule[i], alexchild[i]);
     //std::cout<<alexchild[i].size()<<'\n';
     std::cout << "End get submodule_alex " << i <<"\n";
 	  //net_input_alex[i] = (Net *)malloc(sizeof(Net));
     //std::cout<<"11111"<<"\n";
     net_input_alex[i].child = alexchild[i];
     //std::cout<<"22222"<<"\n";
-	  net_input_alex[i].inputs = inputs;
+	  net_input_alex[i].layer = (Layer*)malloc(sizeof(Layer)*alexchild[i].size());
+	  net_input_alex[i].input = inputs;
     //std::cout<<"33333"<<"\n";
-    net_input_alex[i].index_n = i + n_res + n_dense;
+    net_input_alex[i].index_n = i+ n_res + n_dense;
     //std::cout<<"4444"<<"\n";
   }
 
@@ -165,11 +174,23 @@ int main(int argc, const char* argv[]) {
     std::cout << "End get submodule_vgg " << i << "\n";
 	  //net_input_vgg[i] = (Net *)malloc(sizeof(Net));
 	  net_input_vgg[i].child = vggchild[i];
-	  net_input_vgg[i].inputs = inputs;
+	  net_input_vgg[i].layer = (Layer*)malloc(sizeof(Layer)*vggchild[i].size());
+	  net_input_vgg[i].input = inputs;
     net_input_vgg[i].index_n = i + n_alex + n_res + n_dense;
   }
 
+  for(int i=0;i<n_wide;i++){
+	  get_submodule_resnet18(wideModule[i], widechild[i],wideblock);
+    std::cout << "End get submodule_widenet "<< i << "\n";
+	  net_input_wide[i].child = widechild[i];
+    net_input_wide[i].block = wideblock;
+	  net_input_wide[i].layer = (Layer*)malloc(sizeof(Layer)*widechild[i].size());
+	  net_input_wide[i].input = inputs;
+    net_input_wide[i].index_n = i+n_alex + n_res + n_dense + n_vgg;
+  }
+
 for(int i=0;i<n_dense;i++){
+  cout<<"dfdfewewfwe\n";
     if (pthread_create(&networkArray_dense[i], NULL, (void *(*)(void*))predict_densenet, &net_input_dense[i]) < 0){
       perror("thread error");
       exit(0);
@@ -193,6 +214,12 @@ for(int i=0;i<n_dense;i++){
       exit(0);
     }
   }
+  for(int i=0;i<n_wide;i++){
+    if (pthread_create(&networkArray_wide[i], NULL, (void *(*)(void*))predict_resnet18, &net_input_wide[i]) < 0){
+      perror("thread error");
+      exit(0);
+    }
+  }
 
   for (int i = 0; i < n_dense; i++){
     pthread_join(networkArray_dense[i], NULL);
@@ -206,7 +233,9 @@ for(int i=0;i<n_dense;i++){
   for (int i = 0; i < n_vgg; i++){
     pthread_join(networkArray_vgg[i], NULL);
   }
-
+  for (int i = 0; i < n_wide; i++){
+    pthread_join(networkArray_wide[i], NULL);
+  }
   free(cond_t);
   free(mutex_t);
   free(cond_i);

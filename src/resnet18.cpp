@@ -40,11 +40,11 @@ void get_submodule_resnet18(torch::jit::script::Module module,std::vector<torch:
 
 void *predict_resnet18(Net *input){
     std::vector<torch::jit::Module> child = input->child;
-	std::vector<torch::jit::IValue> inputs = input->inputs;
-	std::cout<<"child = "<<child.size()<<'\n';
-	std::cout<<"basic = "<<input->block.size()<<'\n';
-
-	for(int i = 0;i<child.size();i++) {
+	std::vector<torch::jit::IValue> inputs = input->input;
+	//std::cout<<"child = "<<child.size()<<'\n';
+	//std::cout<<"basic = "<<input->block.size()<<'\n';
+	int i;
+	for(i = 0;i<child.size();i++) {
 		pthread_mutex_lock(&mutex_t[input->index_n]);
 		cond_i[input->index_n] = 1; //right?
 		
@@ -63,29 +63,32 @@ void *predict_resnet18(Net *input){
            	pthread_cond_wait(&cond_t[input->index_n], &mutex_t[input->index_n]);
     	}
 		i = nl.net->index;
-		input->inputs.clear();
-		input->inputs.push_back(input->output);
+		input->input.clear();
+		input->input.push_back(input->layer[i].output);
 		pthread_mutex_unlock(&mutex_t[input->index_n]);
 	}
 	std::cout << "\n*****Res result*****" << "\n";
-	std::cout << (input->output).slice(/*dim=*/1, /*start=*/0, /*end=*/15) << "\n";
+	std::cout << (input->layer[i].output).slice(/*dim=*/1, /*start=*/0, /*end=*/15) << "\n";
 }
 
 void forward_resnet18(th_arg *th){
 	pthread_mutex_lock(&mutex_t[th->arg->net->index_n]);
 	netlayer *nl = th->arg;
 	std::vector<torch::jit::Module> child = nl->net->child;
-	std::vector<torch::jit::IValue> inputs = nl->net->inputs;
+	std::vector<torch::jit::IValue> inputs = nl->net->input;
 	std::vector<pair<int,int>> basicblock = nl->net->block;
 	at::Tensor identity = nl->net->identity;
 	//vector<torch::jit::IValue> input; // ==inputs?
 	vector<torch::jit::IValue> inputs_cpy;
-	at::Tensor out = nl->net->output;
 	int k =nl->net->index;
-	static int j;
+	at::Tensor out;
+	int j;
 
-	if(k != 0)
-		j = nl->net->j;
+	if(k==0)
+        j=0;
+    else
+        j = nl->net->j;
+	
 
     //std::cout<<"res layer index = "<<k<<"\n";
     //output.clear();
@@ -96,7 +99,7 @@ void forward_resnet18(th_arg *th){
 
     if(k == child.size()) //flatten
     {	
-		out = nl->net->output.view({nl->net->output.size(0), -1});
+		out = out.view({inputs[0].toTensor().size(0), -1});
 		//out = out.view({out.size(0), -1});
        	inputs.clear();
        	//out =  out.to(at::kCPU);
@@ -148,7 +151,7 @@ void forward_resnet18(th_arg *th){
 		out = child[k].forward(inputs).toTensor();
 	}
 
-    nl->net->output = out;
+    nl->net->layer[k].output = out;
 	nl->net->identity = identity;
 	nl->net->j = j;
 	nl->net->index = k; //check
